@@ -13,10 +13,30 @@ def get_location(city, state):
     data = response.json()
     for location in data:
         if location.get("state") == state:
-            return {"lat": location["lat"], "lon": location["lon"], "country": location["country"], "state": location["state"]}
+            return {"City": location["name"],"state": location["state"],"country": location["country"],"lat": location["lat"], "lon": location["lon"]}
         
     print("Erro de digitação")
     return None
 
-location_data = get_location(city="Aracaju",state="Sergipe")
-print(location_data)
+location = get_location(city="Aracaju",state="Sergipe")
+print(location)
+
+
+def get_weather(city,state):
+
+    
+    if location: 
+
+        lat = location['lat']
+        lon = location['lon']
+
+        url = f'https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&units=metric&lang=pt_br'
+        response = requests.get(url)
+        weather_data = response.json()
+        return weather_data
+    else:
+        print('Erro ao encontrar localização')
+        return None
+
+weather = get_weather(city='Aracaju', state='Sergipe')
+print(weather)
