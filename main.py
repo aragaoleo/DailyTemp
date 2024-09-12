@@ -4,6 +4,8 @@ import requests
 import pandas as pd
 from datetime import datetime
 import pytz
+from collections import Counter
+import math
 load_dotenv()
 
 api_key = os.getenv("api_key")
@@ -23,15 +25,12 @@ def get_location(city, state):
     print("Erro de digitação")
     return None
 
-location = get_location(city,state)
+location = get_location(city, state)
 
-def get_weather(city,state):
-
+def get_weather(city, state):
     if location: 
-
         lat = location['lat']
         lon = location['lon']
-
         url = f'https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&units=metric&lang=pt_br'
         response = requests.get(url)
         weather_data = response.json()
@@ -40,38 +39,27 @@ def get_weather(city,state):
         print('Erro ao encontrar localização')
         return None
 
-weather = get_weather(city,state)
+weather = get_weather(city, state)
 if weather is not None:
 
-    timestamp = weather.get('dt', None)  # timestamp do clima
+    timestamp = weather.get('dt', None)
     if timestamp:
-        # Converter o timestamp UTC para uma data e hora em UTC
         dt_utc = datetime.fromtimestamp(timestamp, tz=pytz.UTC)
-        
-        # Converter o horário UTC para o horário local
-        local_tz = pytz.timezone('America/Sao_Paulo')  # Ajuste para o fuso horário desejado
+        local_tz = pytz.timezone('America/Sao_Paulo')
         dt_local = dt_utc.astimezone(local_tz)
-        
-        # Formatar a data e hora local
-        dt_txt = dt_local.strftime('%Y-%m-%d %H:%M:%S')
+        dt_txt = dt_local.strftime('%H:%M') 
 
-    temp = weather['main']['temp']
-    feels_like = weather['main']['feels_like']
-    temp_min = weather['main']['temp_min']
-    temp_max = weather['main']['temp_max']
-    pressure = weather['main']['pressure']
-    humidity = weather['main']['humidity']
+    temp = math.ceil(weather['main']['temp'])
+    feels_like = math.ceil(weather['main']['feels_like'])
+    humidity = f"{weather['main']['humidity']}%"
     weather_desc = weather['weather'][0]['description']
-    wind_speed = weather['wind']['speed']
-    
+
     rows = [{
         'Hora': dt_txt,
-        'Temperatura': temp,
-        'Sensação térmica': feels_like,
-        'Pressão atmosférica': pressure,
+        'Temperatura': f"{temp}°C",
+        'Sensação térmica': f"{feels_like}°C",
         'Humidade': humidity,
-        'Descrição do tempo': weather_desc,
-        'Velocidade do vento': wind_speed*3.6,
+        'Descrição do tempo': weather_desc
     }]
 
     dfWeather = pd.DataFrame(rows)
@@ -79,12 +67,10 @@ if weather is not None:
 else:
     print("Erro: não foi possível obter os dados do clima atual.")
 
-def get_forecast(city,state):
+def get_forecast(city, state):
     if location: 
-
         lat = location['lat']
         lon = location['lon']
-
         url = f'https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&appid={api_key}&units=metric&lang=pt_br'
         response = requests.get(url)
         forecast_data = response.json()
@@ -93,40 +79,79 @@ def get_forecast(city,state):
         print('Erro ao encontrar localização')
         return None
 
-forecast = get_forecast(city,state)
+forecast = get_forecast(city, state)
 
 if forecast is not None and 'list' in forecast:
     forecast_list = forecast['list']
 
-    rows = []
+    today = datetime.now(pytz.timezone('America/Sao_Paulo')).date()
+    today_weekday = today.weekday() 
+
+    daily_data = {}
+
     for entry in forecast_list:
-        dt_txt = entry['dt_txt']
-        temp = entry['main']['temp']
-        feels_like = entry['main']['feels_like']
-        temp_min = entry['main']['temp_min']
-        temp_max = entry['main']['temp_max']
-        pressure = entry['main']['pressure']
+
+        date = entry['dt_txt'].split(" ")[0]
+        date_obj = datetime.strptime(date, '%Y-%m-%d').date()
+        
+        weekdays = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM']
+
+        days_difference = (date_obj - today).days
+        if days_difference >= 0:
+            day_sig = weekdays[(today_weekday + 1 + days_difference) % 7]
+        else:
+            continue
+
+        temp = round(entry['main']['temp'])
+        feels_like = round(entry['main']['feels_like'])
+        temp_min = round(entry['main']['temp_min'])
+        temp_max = round(entry['main']['temp_max'])
         humidity = entry['main']['humidity']
         weather_desc = entry['weather'][0]['description']
-        wind_speed = entry['wind']['speed']
-        pop = entry.get('pop', None)
-        
+        pop = round(entry.get('pop', 0) * 100)
+
+        if day_sig not in daily_data:
+            daily_data[day_sig] = {
+                'temps': [],
+                'feels_like': [],
+                'temp_min': [],
+                'temp_max': [],
+                'humidity': [],
+                'pop': [],
+                'descriptions': []
+            }
+        daily_data[day_sig]['temps'].append(temp)
+        daily_data[day_sig]['feels_like'].append(feels_like)
+        daily_data[day_sig]['temp_min'].append(temp_min)
+        daily_data[day_sig]['temp_max'].append(temp_max)
+        daily_data[day_sig]['humidity'].append(humidity)
+        daily_data[day_sig]['pop'].append(pop)
+        daily_data[day_sig]['descriptions'].append(weather_desc)
+
+    rows = []
+    for day_abbr, data in daily_data.items():
+        avg_temp = round(sum(data['temps']) / len(data['temps']))
+        avg_feels_like = round(sum(data['feels_like']) / len(data['feels_like']))
+        avg_humidity = round(sum(data['humidity']) / len(data['humidity']))
+        avg_pop = round(sum(data['pop']) / len(data['pop']))
+
+        max_temp = max(data['temp_max'])
+        min_temp = min(data['temp_min'])
+
+        most_common_desc = Counter(data['descriptions']).most_common(1)[0][0]
+
         rows.append({
-            'Data e hora': dt_txt,
-            'Temperatura': temp,
-            'Sensação térmica': feels_like,
-            'Temperatura mínima': temp_min,
-            'Temperatura máxima': temp_max,
-            'Pressão atmosférica': pressure,
-            'Umidade': humidity,
-            'Descrição do tempo': weather_desc,
-            'Velocidade do vento': wind_speed*3.6,
-            'Chance de chuva': pop*100
+            'Dia': day_sig,
+            'Temperatura média': f"{avg_temp}°C",
+            'Sensação térmica média': f"{avg_feels_like}°C",
+            'Temperatura mínima': f"{min_temp}°C",
+            'Temperatura máxima': f"{max_temp}°C",
+            'Humidade média': f"{avg_humidity}%",
+            'Chance média de chuva': f"{avg_pop}%",
+            'Descrição mais comum': most_common_desc
         })
 
     dfForecast = pd.DataFrame(rows)
-
-
     print(dfForecast)
 else:
     print("Erro: não foi possível obter os dados de previsão do tempo.")
